@@ -16,10 +16,14 @@
 
 package org.springframework.ai.zhipuai.chat;
 
+import java.io.File;
 import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -62,6 +66,13 @@ import org.springframework.core.io.Resource;
 import org.springframework.util.MimeTypeUtils;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.util.MimeType;
+
+import javax.sound.sampled.*;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 
 /**
  * @author Geng Rong
@@ -168,7 +179,7 @@ class ZhiPuAiChatModelIT {
 
 		String format = outputConverter.getFormat();
 		String template = """
-				Generate the filmography for a random actor.
+				Generate the filmography for a random actor. Return ONLY the JSON object without any prefix.
 				{format}
 				""";
 		PromptTemplate promptTemplate = PromptTemplate.builder()
@@ -358,6 +369,88 @@ class ZhiPuAiChatModelIT {
 
 	record ActorsFilmsRecord(String actor, List<String> movies) {
 
+	}
+
+	@Value("classpath:/test.flac")
+	private Resource audioFile;
+
+	private byte[] convertFlacToWav(byte[] flacData) throws IOException {
+		try {
+			// 读取FLAC音频
+			AudioInputStream flacStream = AudioSystem.getAudioInputStream(new ByteArrayInputStream(flacData));
+			AudioFormat flacFormat = flacStream.getFormat();
+			
+			// 创建WAV格式
+			AudioFormat wavFormat = new AudioFormat(
+				flacFormat.getSampleRate(),
+				16, // 16位采样
+				flacFormat.getChannels(),
+				true, // signed
+				false // little endian
+			);
+			
+			// 转换格式
+			AudioInputStream wavStream = AudioSystem.getAudioInputStream(wavFormat, flacStream);
+			
+			// 写入字节数组
+			ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+			AudioSystem.write(wavStream, AudioFileFormat.Type.WAVE, outputStream);
+			
+			return outputStream.toByteArray();
+		}
+		catch (UnsupportedAudioFileException e) {
+			throw new IOException("Failed to convert audio format", e);
+		}
+	}
+
+	@Test
+	void transcriptionTest() throws IOException {
+		// 读取音频文件
+		byte[] flacData = audioFile.getInputStream().readAllBytes();
+		
+		// 转换为WAV格式
+		byte[] wavData = convertFlacToWav(flacData);
+		
+		// 转换为base64
+		String base64Audio = Base64.getEncoder().encodeToString(wavData);
+		
+		// 构建完整的请求消息
+		Map<String, Object> message = new HashMap<>();
+		message.put("role", "user");
+		
+		// 构建音频内容
+		Map<String, Object> audioInfo = new HashMap<>();
+		audioInfo.put("data", base64Audio);
+		audioInfo.put("format", "wav");
+		
+		Map<String, Object> audioContent = new HashMap<>();
+		audioContent.put("type", "input_audio");
+		audioContent.put("input_audio", audioInfo);
+		
+		// 设置消息内容
+		message.put("content", List.of(audioContent));
+		
+		// 使用ObjectMapper序列化消息
+		ObjectMapper objectMapper = new ObjectMapper();
+		String messageJson = objectMapper.writeValueAsString(List.of(message));
+		
+		// 创建UserMessage
+		UserMessage userMessage = new UserMessage(messageJson);
+		
+		// 创建Prompt并设置选项
+		var response = this.chatModel.call(new Prompt(userMessage,
+				ZhiPuAiChatOptions.builder()
+					.model(ZhiPuAiApi.ChatModel.GLM_4_Voice.getValue())
+					.maxTokens(1024)
+					.build()));
+		
+		logger.info("Response: {}", response);
+		
+		// 验证响应
+		assertThat(response.getResult()).isNotNull();
+		String responseText = response.getResult().getOutput().getText();
+		assertThat(responseText).isNotEmpty();
+		logger.info("Response text: {}", responseText);
 	}
 
 }

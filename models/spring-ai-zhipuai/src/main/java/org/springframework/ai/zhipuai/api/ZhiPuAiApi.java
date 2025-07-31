@@ -372,6 +372,8 @@ public class ZhiPuAiApi {
 		GLM_4("GLM-4"),
 
 		GLM_4V("glm-4v"),
+		//glm-4-voice
+		GLM_4_Voice("glm-4-voice"),
 
 		GLM_4_Air("glm-4-air"),
 

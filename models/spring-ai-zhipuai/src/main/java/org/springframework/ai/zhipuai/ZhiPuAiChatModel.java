@@ -239,7 +239,8 @@ public class ZhiPuAiChatModel implements ChatModel {
 		// merging runtime and default options.
 		Prompt requestPrompt = buildRequestPrompt(prompt);
 		ChatCompletionRequest request = createRequest(requestPrompt, false);
-
+		//打印re quest
+		// logger.info("Request: {}", request);
 		ChatModelObservationContext observationContext = ChatModelObservationContext.builder()
 			.prompt(requestPrompt)
 			.provider(ZhiPuApiConstants.PROVIDER_NAME)
